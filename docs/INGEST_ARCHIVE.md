@@ -31,8 +31,7 @@ important failed input elsewhere before its retention expires.
 - Protocol/authentication/schema rejections before dispatch are outside this
   archive. Phone adapters must supply valid arguments first.
 - This is a recovery archive, **not** a durable retry worker or exactly-once
-  ingest system. It does not change the existing 5,000-character digest limit
-  or model settings. Replaying may create/merge memories; review first.
+  ingest system. Replaying may create/merge memories; review first.
 - Older failed requests cannot be reconstructed from metadata-only logs.
 
 ## Upstream workflow
@@ -44,3 +43,22 @@ discard or bypass fork customizations; use Git for this installation.
 
 Run focused tests with `PYTHONPATH=src python -m unittest discover -s tests
 -p test_ingest_archive_local.py -v`.
+
+## Long-text digest segments
+
+Long input is split losslessly into at most 4096 Unicode characters per
+segment, favoring phone-message, paragraph, then line boundaries. A single
+oversized line is hard-split. No suffix is silently discarded. Source line
+ranges are translated back to the complete original document.
+
+Segments are processed sequentially. Completed model results are saved in
+`digest_chunks` receipts in the same archive. An identical input with the
+same model settings/prompt reuses completed segments on a later retry,
+including after restart. Changed model settings invalidate the cache.
+All segments must finish before grow starts creating buckets. This avoids
+partial writes caused by a digest failure; it does not yet solve partial
+bucket-write failures or provide automatic timed retries.
+
+Chunk caches follow the same 30-day archive retention. They are processing
+checkpoints, not separate memory buckets. Model settings and the 8192 output
+token budget are independent from the 4096-character input bound.

@@ -90,7 +90,7 @@ _DEHYDRATE_MIN_TOKENS = 100
 _DEHYDRATE_INPUT_LIMIT = 3000
 _MERGE_INPUT_LIMIT = 2000     # 新旧各一份
 _ANALYZE_INPUT_LIMIT = 2000
-_DIGEST_INPUT_LIMIT = 5000    # 一天的日记量较大
+_DIGEST_INPUT_LIMIT = 4096    # 一天的日记量较大
 _PLAN_JUDGE_INPUT_LIMIT = 1500  # plan 与 new event 各一份
 _SAME_EVENT_INPUT_LIMIT = 1800  # 旧桶与新内容各一份
 
@@ -1089,6 +1089,14 @@ class Dehydrator:
 
         # --- API digest (no local fallback) ---
         self._require_api()
+        if len(content) > _DIGEST_INPUT_LIMIT:
+            from ombrebrain.storage.digest_chunks import digest_all
+            return await digest_all(content, {
+                "model": self.model, "api_format": self.api_format,
+                "endpoint": str(getattr(self.client, "base_url", "")),
+                "human": self.human, "max_tokens": self.digest_max_tokens,
+                "extra_body": self.extra_body, "prompt": DIGEST_PROMPT,
+            }, self._api_digest_detailed)
         try:
             result, 诊断 = await self._api_digest_detailed(content)
             if result:
@@ -1122,7 +1130,9 @@ class Dehydrator:
         # 带行号喂进去：prompt 要它报 source_ranges，它就必须看得见行号。
         # 这样它**碰不到原文本身**——只能说「第几行」，原话由系统逐字去取。
         # 「LLM 禁止压缩原句」这条因此是结构性的，不靠它自觉。
-        截断 = content[:_DIGEST_INPUT_LIMIT]
+        if len(content) > _DIGEST_INPUT_LIMIT:
+            raise ValueError("Digest segment exceeds 4096 characters; use digest() for long input")
+        截断 = content
         编号原文 = "\n".join(
             f"{序号}| {行}" for 序号, 行 in enumerate(截断.splitlines(), start=1)
         )
