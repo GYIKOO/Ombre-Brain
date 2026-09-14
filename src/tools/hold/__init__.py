@@ -26,6 +26,7 @@ from typing import Optional
 from errors import ToolInputError, safe_error_detail
 from ombrebrain.storage.media_store import MediaPersistenceError
 from ombrebrain.storage.quote_store import normalize_quotes
+from ombrebrain.storage.ingest_archive import archive_ingest
 from ombrebrain.storage.source_store import normalize_source_ranges
 from utils import normalize_memory_title, parse_bool
 
@@ -104,6 +105,7 @@ def _prepare_source_refs(
     return [{"ref": ref, "ranges": ranges}]
 
 
+@archive_ingest("hold")
 async def dispatch(
     content: str,
     title: Optional[str] = "",

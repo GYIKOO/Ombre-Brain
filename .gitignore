@@ -88,3 +88,6 @@ tmp_hnf1_pas_pair_smoke_*/
 coverage.xml
 .coverage
 htmlcov/
+
+# Local ingest receipts can contain private conversations.
+ingest-archive/

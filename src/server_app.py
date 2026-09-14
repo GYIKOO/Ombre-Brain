@@ -535,6 +535,7 @@ class RuntimeLifecycle:
     logger: Any
     decay_engine: Any = None
     embedding_outbox: Any = None
+    ingest_archive_retention: Any = None
     you_service: Any = None
     ensure_ollama_child: AsyncCallback | None = None
     stop_ollama_child: AsyncCallback | None = None
@@ -605,6 +606,7 @@ class RuntimeLifecycle:
         if self._started:
             return
         self._started = True
+        await self._run_async_step('ingest archive retention start', getattr(self.ingest_archive_retention, 'start', None))
         self._start_optional_services()
         await self._run_async_step(
             "decay engine start",
@@ -627,6 +629,7 @@ class RuntimeLifecycle:
         self._reset_boot_marker()
 
     async def stop(self) -> None:
+        await self._run_async_step('ingest archive retention stop', getattr(self.ingest_archive_retention, 'stop', None))
         if not self._started:
             return
         self._started = False

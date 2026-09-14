@@ -51,6 +51,7 @@ from decay_engine import DecayEngine
 from embedding_engine import EmbeddingEngine
 from ombrebrain.storage.embedding_outbox import EmbeddingOutbox
 from ombrebrain.storage.source_store import SourceStore
+from ombrebrain.storage.ingest_archive import ArchiveRetention
 from ombrebrain.them import ThemService, ThemStore, ThemToolGate
 from ombrebrain.you import YouService, YouStore, YouToolGate
 from ombrebrain.security.deployment_profile import enforce_mcp_network_guard
@@ -1449,6 +1450,7 @@ if __name__ == "__main__":
 
         _http_settings = HTTPRuntimeSettings.from_config(config)
         _runtime_lifecycle = RuntimeLifecycle(
+            ingest_archive_retention=ArchiveRetention(),
             logger=logger,
             decay_engine=decay_engine,
             embedding_outbox=embedding_outbox,
@@ -1578,6 +1580,7 @@ if __name__ == "__main__":
         # FastMCP public lifespan 触发。向量队列必须与 HTTP 一样纳入生命周期，
         # 否则正文落盘后会退回同步索引，让慢 provider 拖住工具回包。
         _stdio_runtime_lifecycle = RuntimeLifecycle(
+            ingest_archive_retention=ArchiveRetention(),
             logger=logger,
             embedding_outbox=embedding_outbox,
             you_service=you_service,

@@ -24,6 +24,7 @@ import re
 from typing import Optional
 
 from ombrebrain.storage.source_store import normalize_source_ranges
+from ombrebrain.storage.ingest_archive import archive_ingest
 
 from .. import _runtime as rt
 from .._common import check_grow_input_size, check_grow_items_payload
@@ -130,6 +131,7 @@ def _shifted_source_ranges_error(items: list, source_content: str) -> str:
         "请重新核对 1-based 闭区间。")
 
 
+@archive_ingest('grow')
 async def dispatch(
     content: str = "", items: Optional[list] = None, test_data: bool = False
 ) -> str:
