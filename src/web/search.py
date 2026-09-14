@@ -186,11 +186,29 @@ def register(mcp) -> None:
             from ombrebrain.storage.duplicate_review import candidates, history
             eligible = [b for b in all_b if b.get("metadata", {}).get("type") == "dynamic"
                         and not b.get("metadata", {}).get("pinned") and not b.get("metadata", {}).get("protected")]
-            pairs = await candidates(eligible, sh.embedding_engine)
+            pairs = await candidates(eligible, sh.embedding_engine, float(request.query_params.get("threshold", 0.80)))
             return JSONResponse({"pairs": pairs, "total": len(pairs), "reviewed": history()})
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
+
+    @mcp.custom_route("/api/duplicates/scan", methods=["POST"])
+    async def api_duplicate_scan(request: Request) -> Response:
+        from starlette.responses import JSONResponse
+        from ombrebrain.storage.duplicate_review import scan
+        err = sh._require_auth(request)
+        if err:
+            return err
+        try:
+            payload = await request.json()
+            buckets = [b for b in await sh.bucket_mgr.list_all(include_archive=False)
+                       if not letter_lock_state(b, "human")["locked"]]
+            result = await scan(sh.bucket_mgr, sh.embedding_engine, buckets,
+                                float(payload.get("review_threshold", 0.80)),
+                                float(payload.get("auto_threshold", 0.985)))
+            return JSONResponse(result)
+        except (ValueError, TypeError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
 
     @mcp.custom_route("/api/duplicates/review", methods=["POST"])
     async def api_duplicate_review(request: Request) -> Response:

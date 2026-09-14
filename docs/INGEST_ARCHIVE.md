@@ -81,14 +81,19 @@ fingerprint commit can still repeat work. Multiple worker processes are not
 supported for this guard. Already stored hashes persist beyond the 30-day raw
 archive retention; they contain no original message text.
 
-## Human duplicate review
+## Two-band duplicate review
 
-Settings > Backup & Migration > Check duplicate buckets uses existing local
-vectors (0.97 cosine threshold) or exact text. Missing vectors are skipped;
-no API requests are made by this check. Only ordinary, unprotected, unpinned
-dynamic buckets can be reviewed. Inspect both titles to read their contents
-and dates, then retain A/archive B, retain B/archive A, or dismiss the pair.
-Archive decisions and representative links are saved in `duplicate-review.db`.
-Undo restores the archived original; stale/edited content is rejected for
-manual inspection. There is no automatic semantic merge or physical deletion.
-Candidate display is limited to the 200 highest-scoring pairs per scan.
+Settings > Backup & Migration has independent review (default 0.80) and
+automatic archive (default 0.985) thresholds, editable for each scan.
+The explicit POST scan automatically archives exact-text or high-score pairs,
+preferentially retaining the longer text. Scores are not probabilities.
+Lower-score candidates are displayed for manual decisions. Only existing local
+vectors are compared, without model API calls. Missing vectors still allow
+exact-text matching. Protected, pinned and locked buckets are excluded.
+GET and refresh after review are read-only. No pair display cap hides matches.
+
+Direct pairs only: a discarded member cannot pull additional memories into
+its group through transitive similarity. Decisions record representative IDs
+in duplicate-review.db; originals remain archived and can be restored.
+Undo and dismiss suppress the unchanged pair on later scans. Changed content
+is eligible again. This is scan-triggered, not a scheduled background job.

@@ -150,6 +150,55 @@ class DedupTests(unittest.TestCase):
 
         asyncio.run(go())
 
+    def test_two_bands_and_undo_suppression(self):
+        import math
+        from ombrebrain.storage.duplicate_review import scan
+        class Manager:
+            def __init__(self):
+                self.b = {str(i): {"id": str(i), "content": "text" + "x" * i,
+                          "metadata": {"type": "dynamic"}} for i in range(4)}
+                self.b["3"]["metadata"]["protected"] = True
+            async def get(self, key):
+                return copy.deepcopy(self.b[key])
+            get_including_archive = get
+            async def archive(self, key):
+                self.b[key]["metadata"]["type"] = "archived"
+                return True
+            async def restore_archived(self, key):
+                self.b[key]["metadata"]["type"] = "dynamic"
+                return {"ok": True}
+        class Engine:
+            enabled = True
+            async def get_embedding(self, key):
+                angle = {"0": 0, "1": 0.1, "2": 0.5, "3": 0}[key]
+                return [math.cos(angle), math.sin(angle)]
+        async def go():
+            m = Manager()
+            result = await scan(m, Engine(), list(m.b.values()))
+            self.assertEqual(len(result["automatic"]), 1)
+            self.assertEqual(result["automatic"][0]["a"]["id"], "1")
+            self.assertEqual(len(result["pairs"]), 1)
+            self.assertEqual(m.b["3"]["metadata"]["type"], "dynamic")
+            await undo(m, result["automatic"][0]["id"])
+            result = await scan(m, Engine(), list(m.b.values()))
+            self.assertEqual(result["automatic"], [])
+            self.assertEqual(len(result["pairs"]), 2)
+            for low, high in [(0.9, 0.8), (float("nan"), 0.98), (-1, 1)]:
+                with self.assertRaises(ValueError):
+                    await scan(m, Engine(), list(m.b.values()), low, high)
+            # A~B and B~C do not imply A~C; do not archive through removed B.
+            m = Manager()
+            m.b["0"]["content"] = "longest representative text"
+            class ChainEngine:
+                enabled = True
+                async def get_embedding(self, key):
+                    angle = int(key) * 0.15
+                    return [math.cos(angle), math.sin(angle)]
+            result = await scan(m, ChainEngine(), list(m.b.values()))
+            self.assertEqual(len(result["automatic"]), 1)
+            self.assertEqual(m.b["2"]["metadata"]["type"], "dynamic")
+        asyncio.run(go())
+
 
 if __name__ == "__main__":
     unittest.main()

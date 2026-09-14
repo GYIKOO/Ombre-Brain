@@ -3413,10 +3413,12 @@
         <div style="font-weight:600;font-size:13px;margin-bottom:6px;">导出备份 / 检查重复 <span class="en">Export / Dedup</span></div>
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">
           导出打包当前所有 bucket markdown + embeddings.db（<strong>不包含 config / 密钥</strong>），可用于本地备份或跨设备迁移。<br>
-          重复桶：只比较已有向量（阈值 0.97）或一致正文，无额外 API 调用。可人工归档并撤销。
+          重复桶：高相似度自动保留一条（优先正文较长者），其余候选人工筛选。仅比较已有向量，无额外 API 调用；归档可撤销。
         </div>
         <button class="btn-primary" onclick="downloadExport()" style="display:inline-flex;align-items:center;gap:6px;"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg> 导出全部为 zip</button>
-        <button onclick="loadDuplicates()" class="icon-btn" style="margin-left:8px;"><i data-lucide="copy"></i> 检查重复桶</button>
+        <label>人工阈值 <input id="dup-review-threshold" type="number" min="0" max="1" step="0.005" value="0.80" style="width:85px"></label>
+        <label>自动阈值 <input id="dup-auto-threshold" type="number" min="0" max="1" step="0.001" value="0.985" style="width:85px"></label>
+        <button onclick="loadDuplicates(true)" class="icon-btn" style="margin-left:8px;"><i data-lucide="copy"></i> 扫描并自动归档高相似项</button>
         <div id="duplicates-list" style="margin-top:14px;font-size:12px;"></div>
       </div>
 
@@ -9889,16 +9891,21 @@ async function undoDuplicate(id) {
     await loadDuplicates();
   } catch (error) { alert(error.message); }
 }
-async function loadDuplicates() {
+async function loadDuplicates(runScan = false) {
   const box = document.getElementById('duplicates-list');
   box.textContent = '本地比较已有向量…';
   try {
-    const r = await fetch(BASE + '/api/duplicates');
+    const review_threshold = Number(document.getElementById('dup-review-threshold').value);
+    const auto_threshold = Number(document.getElementById('dup-auto-threshold').value);
+    if (!(0 <= review_threshold && review_threshold < auto_threshold && auto_threshold <= 1)) throw new Error('须满足 0 ≤ 人工阈值 < 自动阈值 ≤ 1');
+    const r = runScan
+      ? await fetch(BASE + '/api/duplicates/scan', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({review_threshold,auto_threshold})})
+      : await fetch(BASE + '/api/duplicates?threshold=' + review_threshold);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || '加载失败');
     box.replaceChildren();
     const intro = document.createElement('p');
-    intro.textContent = '仅比较现有向量，无额外 API 请求。相似度不代表同一事件；请点标题核对正文与时间，再决定是否归档。';
+    intro.textContent = '本次自动归档 ' + (d.automatic || []).length + ' 条；待人工筛选 ' + d.total + ' 对。仅比较现有向量，无额外 API 请求。请点标题核对正文与时间。' + (d.errors || []).join('；');
     box.append(intro);
     for (const p of d.pairs || []) {
       const row = document.createElement('div');

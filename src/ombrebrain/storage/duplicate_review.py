@@ -40,14 +40,14 @@ def database():
         db.close()
 
 
-async def candidates(buckets, engine, threshold=0.97):
+async def candidates(buckets, engine, threshold=0.80):
     vectors = {}
     for bucket in buckets:
         if engine and getattr(engine, "enabled", False):
             vectors[bucket["id"]] = await engine.get_embedding(bucket["id"])
     with database() as db:
         dismissed = {
-            (a, b, ah, bh) for a, b, ah, bh in db.execute("SELECT a,b,ah,bh FROM reviews WHERE state='dismissed'")
+            (a, b, ah, bh) for a, b, ah, bh in db.execute("SELECT a,b,ah,bh FROM reviews WHERE state IN ('dismissed','undone')")
         }
     pairs = []
     for index, a in enumerate(buckets):
@@ -65,7 +65,7 @@ async def candidates(buckets, engine, threshold=0.97):
                 return {"id": bucket["id"], "name": meta.get("title") or meta.get("name", bucket["id"]), "hash": h}
 
             pairs.append({"a": display(a, ah), "b": display(b, bh), "score": score, "exact": exact})
-    return sorted(pairs, key=lambda p: p["score"], reverse=True)[:200]
+    return sorted(pairs, key=lambda p: p["score"], reverse=True)
 
 
 async def _review(manager, action, a, b, ah, bh):
@@ -132,3 +132,42 @@ async def undo(manager, rid):
     lock = _review_locks.setdefault(asyncio.get_running_loop(), asyncio.Lock())
     async with lock:
         return await _undo(manager, rid)
+
+
+async def scan(manager, engine, buckets, review_threshold=0.80, auto_threshold=0.985):
+    """Two bands; archive direct pairs only, never infer transitive duplicates."""
+    if not (0 <= review_threshold < auto_threshold <= 1):
+        raise ValueError("阈值须满足 0 ≤ 人工阈值 < 自动阈值 ≤ 1")
+    lock = _review_locks.setdefault(asyncio.get_running_loop(), asyncio.Lock())
+    async with lock:
+        eligible = [b for b in buckets if b.get("metadata", {}).get("type") == "dynamic"
+                    and not b.get("metadata", {}).get("protected")
+                    and not b.get("metadata", {}).get("pinned")]
+        pairs = await candidates(eligible, engine, review_threshold)
+        by_id = {b["id"]: b for b in eligible}
+        archived, retained, automatic, errors = set(), set(), [], []
+        for pair in pairs:
+            if not pair["exact"] and pair["score"] < auto_threshold:
+                continue
+            a, b = pair["a"], pair["b"]
+            if a["id"] in archived or b["id"] in archived:
+                continue
+            # Keep a representative stable for this scan (A~B, B~C != A~C).
+            if a["id"] in retained and b["id"] in retained:
+                continue
+            if b["id"] in retained or (a["id"] not in retained and
+                (len(by_id[b["id"]].get("content", "")), b["id"]) >
+                (len(by_id[a["id"]].get("content", "")), a["id"])):
+                a, b = b, a
+            try:
+                rid = await _review(manager, "archive", a["id"], b["id"], a["hash"], b["hash"])
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            archived.add(b["id"])
+            retained.add(a["id"])
+            automatic.append({"id": rid, "a": a, "b": b, "score": pair["score"]})
+        remaining = [p for p in pairs if p["a"]["id"] not in archived and p["b"]["id"] not in archived]
+        return {"pairs": remaining, "total": len(remaining), "automatic": automatic,
+                "reviewed": history(), "errors": errors,
+                "review_threshold": review_threshold, "auto_threshold": auto_threshold}
