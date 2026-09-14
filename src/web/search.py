@@ -183,29 +183,42 @@ def register(mcp) -> None:
                 b for b in all_b
                 if not letter_lock_state(b, "human")["locked"]
             ]
-            seen: set[frozenset] = set()
-            pairs: list[dict] = []
-            index = {b["id"]: b for b in all_b}
-            for b in all_b:
-                meta = b.get("metadata", {}) or {}
-                other_id = meta.get("dup_candidate")
-                if not other_id or other_id not in index:
-                    continue
-                key = frozenset((b["id"], other_id))
-                if key in seen:
-                    continue
-                seen.add(key)
-                other = index[other_id]
-                pairs.append({
-                    "a": {"id": b["id"], "name": meta.get("name", b["id"])},
-                    "b": {"id": other_id, "name": other["metadata"].get("name", other_id)},
-                    "score": meta.get("dup_score") or other["metadata"].get("dup_score"),
-                })
-            pairs.sort(key=lambda p: p.get("score") or 0, reverse=True)
-            return JSONResponse({"pairs": pairs, "total": len(pairs)})
+            from ombrebrain.storage.duplicate_review import candidates, history
+            eligible = [b for b in all_b if b.get("metadata", {}).get("type") == "dynamic"
+                        and not b.get("metadata", {}).get("pinned") and not b.get("metadata", {}).get("protected")]
+            pairs = await candidates(eligible, sh.embedding_engine)
+            return JSONResponse({"pairs": pairs, "total": len(pairs), "reviewed": history()})
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
+
+    @mcp.custom_route("/api/duplicates/review", methods=["POST"])
+    async def api_duplicate_review(request: Request) -> Response:
+        from starlette.responses import JSONResponse
+        from ombrebrain.storage.duplicate_review import review
+        err = sh._require_auth(request)
+        if err:
+            return err
+        try:
+            payload = await request.json()
+            result = await review(sh.bucket_mgr, **{k: payload[k] for k in ("action", "a", "b", "ah", "bh")})
+            return JSONResponse({"ok": True, "id": result})
+        except (ValueError, KeyError, TypeError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @mcp.custom_route("/api/duplicates/undo", methods=["POST"])
+    async def api_duplicate_undo(request: Request) -> Response:
+        from starlette.responses import JSONResponse
+        from ombrebrain.storage.duplicate_review import undo
+        err = sh._require_auth(request)
+        if err:
+            return err
+        try:
+            payload = await request.json()
+            await undo(sh.bucket_mgr, payload["id"])
+            return JSONResponse({"ok": True})
+        except (ValueError, KeyError, TypeError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
 
     @mcp.custom_route("/api/network", methods=["GET"])
     async def api_network(request: Request) -> Response:

@@ -1305,7 +1305,17 @@ async def check_duplicate_for(new_bucket_id: str, new_text: str, threshold: floa
         try:
             if not rt.embedding_engine or not getattr(rt.embedding_engine, "enabled", False):
                 return
-            sims = await rt.embedding_engine.search_similar(new_text, top_k=_DUP_TOPK)
+            from ombrebrain.storage.duplicate_review import cosine
+            reference = await rt.embedding_engine.get_embedding(new_bucket_id)
+            if not reference:
+                return
+            sims = []
+            for bucket in await rt.bucket_mgr.list_all(include_archive=False):
+                bid = bucket["id"]
+                if bid != new_bucket_id and bucket.get("metadata", {}).get("type") == "dynamic":
+                    vector = await rt.embedding_engine.get_embedding(bid)
+                    sims.append((bid, cosine(reference, vector)))
+            sims.sort(key=lambda item: item[1], reverse=True)
             for bid, score in sims:
                 if bid == new_bucket_id:
                     continue

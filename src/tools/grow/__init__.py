@@ -31,6 +31,7 @@ from .._common import check_grow_input_size, check_grow_items_payload
 from .shortpath import grow_shortpath
 from .core import grow_core, grow_items
 from .retry_guard import request_fingerprint, run_once
+from ombrebrain.storage.message_dedup import process_dialogue
 
 
 _TITLE_ANCHOR_SPLIT_RE = re.compile(
@@ -180,5 +181,5 @@ async def dispatch(
         )
     return await run_once(
         fingerprint,
-        lambda: grow_core(content, test_data=test_data),
+        lambda: process_dialogue(content, test_data, grow_core),
     )

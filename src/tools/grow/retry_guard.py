@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import time
 import weakref
 from collections.abc import Awaitable, Callable
@@ -116,7 +117,10 @@ async def run_once(
                 raise
             async with state.lock:
                 state.inflight.pop(fingerprint, None)
-                state.completed[fingerprint] = (time.monotonic(), result)
+                counts = re.match(r"^(\d+)条\|新(\d+)合(\d+) batch:", str(result))
+                partial = counts and int(counts[1]) != int(counts[2]) + int(counts[3])
+                if not partial:
+                    state.completed[fingerprint] = (time.monotonic(), result)
             return result
 
         task = asyncio.create_task(execute(), name=f"grow:{fingerprint[:12]}")

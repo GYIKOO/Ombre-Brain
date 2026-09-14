@@ -62,3 +62,33 @@ bucket-write failures or provide automatic timed retries.
 Chunk caches follow the same 30-day archive retention. They are processing
 checkpoints, not separate memory buckets. Model settings and the 8192 output
 token budget are independent from the 4096-character input bound.
+
+## Rolling phone-message deduplication
+
+After the complete grow request is archived, phone dialogue envelopes are
+filtered using source, test scope, role, message ID (or timestamp), and exact
+content. No reliable ID/time means no deduplication. Edited text or a new
+timestamp is processed again. Only a result with all items created/merged
+commits message fingerprints to `message-ingest.db` beside the archive.
+Failures, partial results and ambiguous outcomes remain retryable. A per-loop
+lock serializes phone batches in the supported single-process deployment.
+Earlier history is not retroactively marked processed. No extra context is
+added to filtered messages in this first version; short replies may need
+context-aware grouping in a future revision.
+
+This is not exactly-once ingestion: a crash after bucket creation but before
+fingerprint commit can still repeat work. Multiple worker processes are not
+supported for this guard. Already stored hashes persist beyond the 30-day raw
+archive retention; they contain no original message text.
+
+## Human duplicate review
+
+Settings > Backup & Migration > Check duplicate buckets uses existing local
+vectors (0.97 cosine threshold) or exact text. Missing vectors are skipped;
+no API requests are made by this check. Only ordinary, unprotected, unpinned
+dynamic buckets can be reviewed. Inspect both titles to read their contents
+and dates, then retain A/archive B, retain B/archive A, or dismiss the pair.
+Archive decisions and representative links are saved in `duplicate-review.db`.
+Undo restores the archived original; stale/edited content is rejected for
+manual inspection. There is no automatic semantic merge or physical deletion.
+Candidate display is limited to the 200 highest-scoring pairs per scan.

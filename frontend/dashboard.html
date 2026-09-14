@@ -3413,7 +3413,7 @@
         <div style="font-weight:600;font-size:13px;margin-bottom:6px;">导出备份 / 检查重复 <span class="en">Export / Dedup</span></div>
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">
           导出打包当前所有 bucket markdown + embeddings.db（<strong>不包含 config / 密钥</strong>），可用于本地备份或跨设备迁移。<br>
-          重复桶：每次 hold/grow 后系统会标记相似度 &gt; 0.95 的对，下面可逐对处理。
+          重复桶：只比较已有向量（阈值 0.97）或一致正文，无额外 API 调用。可人工归档并撤销。
         </div>
         <button class="btn-primary" onclick="downloadExport()" style="display:inline-flex;align-items:center;gap:6px;"><svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg> 导出全部为 zip</button>
         <button onclick="loadDuplicates()" class="icon-btn" style="margin-left:8px;"><i data-lucide="copy"></i> 检查重复桶</button>
@@ -9872,22 +9872,66 @@ function resetMigrate() {
   document.getElementById('migrate-progress-panel').style.display = 'none';
 }
 
+async function duplicateDecision(action, a, b, ah, bh) {
+  if (action === 'archive' && !confirm('保留所选代表条目，将另一条归档？原文保留，可在下方撤销。')) return;
+  try {
+    const response = await fetch(BASE + '/api/duplicates/review', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,a,b,ah,bh})});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || '操作失败');
+    await loadDuplicates();
+  } catch (error) { alert(error.message); }
+}
+async function undoDuplicate(id) {
+  try {
+    const response = await fetch(BASE + '/api/duplicates/undo', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || '恢复失败');
+    await loadDuplicates();
+  } catch (error) { alert(error.message); }
+}
 async function loadDuplicates() {
   const box = document.getElementById('duplicates-list');
-  box.innerHTML = '<div class="loading">加载中… / Loading…</div>';
+  box.textContent = '本地比较已有向量…';
   try {
     const r = await fetch(BASE + '/api/duplicates');
     const d = await r.json();
-    const pairs = d.pairs || [];
-    if (!pairs.length) { box.innerHTML = '<p style="color:var(--text-dim)">没有发现疑似重复桶。</p>'; return; }
-    box.innerHTML = pairs.map(p => `
-      <div style="background:var(--surface);border-radius:10px;padding:10px;margin:6px 0;">
-        <div style="font-size:12px;color:var(--text-dim);">相似度 ${p.score ? p.score.toFixed(3) : '—'}</div>
-        <div style="margin:4px 0;"><a href="#" data-bucket-id="${escAttr(p.a.id)}" onclick="showDetail(this.dataset.bucketId);return false;">${esc(p.a.name || p.a.id)}</a> ⟷ <a href="#" data-bucket-id="${escAttr(p.b.id)}" onclick="showDetail(this.dataset.bucketId);return false;">${esc(p.b.name || p.b.id)}</a></div>
-      </div>
-    `).join('');
-  } catch (e) { box.innerHTML = '<p style="color:var(--negative)">加载失败: ' + esc(e.message) + '</p>'; }
+    if (!r.ok) throw new Error(d.error || '加载失败');
+    box.replaceChildren();
+    const intro = document.createElement('p');
+    intro.textContent = '仅比较现有向量，无额外 API 请求。相似度不代表同一事件；请点标题核对正文与时间，再决定是否归档。';
+    box.append(intro);
+    for (const p of d.pairs || []) {
+      const row = document.createElement('div');
+      row.style.cssText = 'border:1px solid var(--border);padding:12px;margin:8px 0';
+      const score = document.createElement('div');
+      score.textContent = (p.exact ? '正文一致' : '语义候选') + ' · ' + p.score.toFixed(3);
+      row.append(score);
+      for (const [label, bucket] of [['A',p.a],['B',p.b]]) {
+        const button = document.createElement('button');
+        button.textContent = label + '：' + bucket.name;
+        button.onclick = () => showDetail(bucket.id);
+        row.append(button);
+      }
+      for (const [label,action,a,b] of [['保留 A，归档 B','archive',p.a,p.b],['保留 B，归档 A','archive',p.b,p.a],['不同事件，忽略此对','dismiss',p.a,p.b]]) {
+        const button = document.createElement('button');
+        button.textContent = label;
+        button.onclick = () => duplicateDecision(action,a.id,b.id,a.hash,b.hash);
+        row.append(button);
+      }
+      box.append(row);
+    }
+    if (!(d.pairs || []).length) box.append(document.createTextNode('没有符合阈值的重复候选。'));
+    for (const item of d.reviewed || []) {
+      const row = document.createElement('p');
+      row.textContent = '已归档 / 待核对：' + item.archived + ' → ' + item.representative + ' ';
+      const button = document.createElement('button');
+      button.textContent = '撤销归档';
+      button.onclick = () => undoDuplicate(item.id);
+      row.append(button); box.append(row);
+    }
+  } catch (e) { box.textContent = '加载失败：' + e.message; }
 }
+
 
 // ========================================
 // iter 1.6 §6 — trace 编辑表单（注入到 detail 面板）
