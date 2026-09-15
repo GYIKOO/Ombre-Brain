@@ -5474,13 +5474,14 @@ async function loadBuckets() {
 }
 
 function updateStats() {
-  const total = allBuckets.length;
+  const archived = allBuckets.filter(b => b.type === 'archived').length;
+  const total = allBuckets.length - archived;
   const pinned = allBuckets.filter(b => b.pinned).length;
   const feels = allBuckets.filter(b => b.type === 'feel').length;
   const resolved = allBuckets.filter(b => b.resolved).length;
   const digested = allBuckets.filter(b => b.digested).length;
   document.getElementById('stats').textContent =
-    total + ' 桶 · ' + pinned + ' 钉选 · ' + feels + ' feel · ' + resolved + ' 已解决 · ' + digested + ' 已消化';
+    total + ' 桶 · ' + archived + ' 已归档 · ' + pinned + ' 钉选 · ' + feels + ' feel · ' + resolved + ' 已解决 · ' + digested + ' 已消化';
   updateChick(total);   // 小黄鸡蛋随记忆总数孵化长大
 }
 
@@ -5536,6 +5537,7 @@ function buildFilters() {
 }
 
 function filterBuckets(buckets) {
+  if (currentFilter !== 'archived') buckets = buckets.filter(function(b) { return b.type !== 'archived'; });
   if (currentFilter === 'all') return buckets;
   if (currentFilter === 'pinned') return buckets.filter(function(b) { return b.pinned; });
   if (currentFilter === 'feel') return buckets.filter(function(b) { return b.type === 'feel'; });
@@ -5735,7 +5737,7 @@ async function searchBuckets(query, preservePage) {
       if (Array.isArray(results)) results.forEach(function(b) { if (!seen[b.id]) { seen[b.id] = 1; merged.push(b); } });
     }
   } catch (e) { /* 离线 / 无向量化：退化为纯本地字面 + 模糊匹配 */ }
-  renderBuckets(merged, preservePage);
+  renderBuckets(merged.filter(function(b) { return currentFilter === 'archived' ? b.type === 'archived' : b.type !== 'archived'; }), preservePage);
 }
 
 let detailLoadGeneration = 0;
@@ -9897,6 +9899,7 @@ async function duplicateDecision(action, a, b, ah, bh) {
     const response = await fetch(BASE + '/api/duplicates/review', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,a,b,ah,bh})});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || '操作失败');
+    await loadBuckets();
     await loadDuplicates();
   } catch (error) { alert(error.message); }
 }
@@ -9905,6 +9908,7 @@ async function undoDuplicate(id) {
     const response = await fetch(BASE + '/api/duplicates/undo', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || '恢复失败');
+    await loadBuckets();
     await loadDuplicates();
   } catch (error) { alert(error.message); }
 }
@@ -9920,6 +9924,7 @@ async function loadDuplicates(runScan = false) {
       : await fetch(BASE + '/api/duplicates?threshold=' + review_threshold);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || '加载失败');
+    if (runScan) await loadBuckets();
     box.replaceChildren();
     const intro = document.createElement('p');
     intro.textContent = '本次自动归档 ' + (d.automatic || []).length + ' 条；待人工筛选 ' + d.total + ' 对。仅比较现有向量，无额外 API 请求。请点标题核对正文与时间。' + (d.errors || []).join('；');
