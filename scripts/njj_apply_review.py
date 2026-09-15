@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 import frontmatter
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -23,6 +24,8 @@ async def apply(review_path, backup_path, vault):
     for p in vault.rglob("*.md"):
         post=frontmatter.load(p)
         if post.get("njj_source_key"):existing[post["njj_source_key"]]=post
+    known_tags = manager._collect_all_tags() or set()
+    manager._collect_all_tags = lambda: known_tags
     records=[]
     for row in review["entries"]:
         if not row["selected"]:continue
@@ -40,7 +43,15 @@ async def apply(review_path, backup_path, vault):
         topics=[x for x in topics if isinstance(x,str)] if isinstance(topics,list) else []
         importance=original.get("importance",5)
         importance=max(1,min(10,int(importance))) if isinstance(importance,(int,float)) else 5
-        bid=await manager.create(row["text"],tags=tags,domain=topics,importance=importance,title=title,imported=True,source_tool="import",grow_batch_id="njj-init-"+review["backup_sha256"][:12],bucket_id_override="njj_"+hashlib.sha256(key.encode()).hexdigest()[:20],defer_derived_index=True)
+        expected_id="njj_"+hashlib.sha256(key.encode()).hexdigest()[:20]
+        pending_path=manager._find_bucket_file(expected_id)
+        if pending_path:
+            pending=frontmatter.load(pending_path)
+            if pending.content != manager._sanitize_text(row["text"]):raise ValueError("Interrupted import content mismatch")
+            bid=expected_id
+        else:
+            bid=await manager.create(row["text"],tags=tags,domain=topics,importance=importance,title=title,imported=True,source_tool="import",grow_batch_id="njj-init-"+review["backup_sha256"][:12],bucket_id_override=expected_id,defer_derived_index=True)
+        known_tags.update(tags)
         path=Path(manager._find_bucket_file(bid));post=frontmatter.load(path)
         post["njj_source_key"]=key;post["njj_import_hash"]=digest
         post["njj_original_hash"]=row["original_hash"]
@@ -49,7 +60,13 @@ async def apply(review_path, backup_path, vault):
         post["njj_character_id"]=review["character_id"]
         fd,tmp=tempfile.mkstemp(dir=path.parent,suffix=".tmp")
         with os.fdopen(fd,"w",encoding="utf8") as f:f.write(frontmatter.dumps(post))
-        os.replace(tmp,path)
+        for attempt in range(20):
+            try:
+                os.replace(tmp,path)
+                break
+            except PermissionError:
+                if attempt==19:raise
+                time.sleep(0.5)
         records.append({"key":key,"id":bid,"status":"created"})
     manifest=Path(review_path).with_name("applied-manifest.json")
     manifest.write_text(json.dumps({"vault":str(vault),"records":records},ensure_ascii=False,indent=2),encoding="utf8")
