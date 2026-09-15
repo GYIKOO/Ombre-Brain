@@ -1109,19 +1109,13 @@ async def build_system_diagnostics() -> dict[str, Any]:
     gh_inst = sh.github_sync_instance
     if gh_inst is None:
         gh_repo = str(gh_cfg.get("repo") or "").strip()
-        # 没配异地备份时，风险高低取决于本地这份是否持久：
-        # 记忆目录不持久（Docker 未挂卷）+ 没备份 = 随时全丢 → error 级强提醒；
-        # 本地持久但只有一份 = 仍建议开备份（盘坏/换机找不回）→ warning。
-        only_copy_at_risk = not persistence["persistent"]
+        # GitHub is optional; an unconfigured integration says nothing about
+        # backups managed externally (OneDrive, Syncthing, etc.).
         checks.append(_check(
             "github",
             "GitHub 备份",
-            "error" if only_copy_at_risk else "warning",
-            (
-                "还没配云端备份，而且本地这份也不持久——记忆随时可能全部丢失，请尽快开启备份"
-                if only_copy_at_risk else
-                "记忆目前只有本地一份，没有云端备份。建议开启 GitHub 备份，换电脑或磁盘损坏时也能找回"
-            ) if not gh_repo else "GitHub 配置存在但运行时实例未创建",
+            "warning" if gh_repo else "ok",
+            "GitHub 配置存在但运行时实例未创建" if gh_repo else "未启用 GitHub 备份（可选）",
             details={
                 "configured": False,
                 "repo": gh_repo,
@@ -1130,7 +1124,7 @@ async def build_system_diagnostics() -> dict[str, Any]:
                 "token_set": _secret_is_set(gh_cfg.get("token", ""), "OMBRE_GITHUB_TOKEN"),
                 "auto_interval_minutes": int(gh_cfg.get("auto_interval_minutes") or 0),
             },
-            action="在 设置 → GitHub 同步 里填仓库和 Token，开启云端备份" if not gh_repo else "在 设置 → GitHub 同步 中保存并验证",
+            action="在 设置 → GitHub 同步 中保存并验证" if gh_repo else "",
         ))
     else:
         gh_status = gh_inst.status()
