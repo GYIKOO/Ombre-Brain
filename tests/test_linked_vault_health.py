@@ -6,7 +6,8 @@ from ombrebrain.storage.vault_health import inspect_vault
 def test_linked_memory_directory(tmp_path):
     root=tmp_path/"runtime"
     shared=tmp_path/"shared"
-    root.mkdir();shared.mkdir()
+    root.mkdir()
+    shared.mkdir()
     (shared/"one.md").write_text("---\nid: one\ntype: dynamic\n---\nhello",encoding="utf8")
     try:
         (root/"dynamic").symlink_to(shared,target_is_directory=True)
