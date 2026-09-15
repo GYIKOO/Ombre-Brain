@@ -33,13 +33,23 @@ def inspect_vault(
     markdown_count = 0
 
     if root.is_dir():
-        for path in sorted(root.rglob("*.md")):
+        # Explicit top-level memory links are supported for split local/runtime vaults.
+        linked_roots = {root / name: (root / name).resolve()
+                        for name in _ACTIVE_TOP_LEVELS | {"archive"}
+                        if (root / name).is_symlink() and (root / name).is_dir()}
+        paths = set(root.rglob("*.md"))
+        for link in linked_roots:
+            paths.update(link.rglob("*.md"))
+        for path in sorted(paths):
             try:
                 resolved = path.resolve()
-                if not resolved.is_file() or not resolved.is_relative_to(root):
+                link_root = next((target for link, target in linked_roots.items()
+                                  if path.is_relative_to(link)), None)
+                allowed_root = link_root or root
+                if not resolved.is_file() or not resolved.is_relative_to(allowed_root):
                     unsafe_paths.append(str(path))
                     continue
-                relative = resolved.relative_to(root).as_posix()
+                relative = path.relative_to(root).as_posix()
                 # 跳过 vault 内以 _ 开头的内部目录，它们不是记忆：
                 #   _app/      —— 播种进来的代码树，自 3.0.0 起含 docs/ 与 kernel/ 的 .md
                 #   _app/_prev/ —— entrypoint 的崩溃回滚点，又留着上一版的同名副本
