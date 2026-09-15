@@ -5857,6 +5857,7 @@ async function showDetail(id) {
         weightHtml +
         triggerHtml +
       '</div>' +
+      (meta.njj_event_date ? '<div style="margin:10px 0;color:var(--text-dim)">njj 原始事件日期：' + esc(typeof meta.njj_event_date === 'number' ? new Date(meta.njj_event_date).toISOString() : String(meta.njj_event_date)) + '</div>' : '') +
       triggeredFeelsHtml +
       deletionRequestHtml +
       '<div class="detail-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;">' +
