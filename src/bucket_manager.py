@@ -2693,6 +2693,29 @@ class BucketManager:
         )
         return True
 
+    async def hard_delete_archived_bucket(self, bucket_id: str) -> dict:
+        """Explicit dashboard cleanup of archived files; never exposed as an MCP tool."""
+        async with self._bucket_turn(bucket_id):
+            file_path = self._find_bucket_file(bucket_id)
+            if not file_path:
+                return {"ok": False, "error": "not_found"}
+            # Resolve links as well as lexical paths before irreversible deletion.
+            archive_root = os.path.realpath(self.archive_dir)
+            resolved = os.path.realpath(file_path)
+            if os.path.commonpath([resolved, archive_root]) != archive_root:
+                return {"ok": False, "error": "not_archived"}
+            post = frontmatter.load(file_path)
+            if post.get("type") != "archived" or post.get("id") != bucket_id:
+                return {"ok": False, "error": "not_archived"}
+            if post.get("protected") or post.get("pinned"):
+                return {"ok": False, "error": "protected"}
+            os.remove(file_path)
+            self._invalidate_bm25()
+            self._record_ledger_event("TraceHardDeleted", bucket_id, "archived", "",
+                                      {}, {"reason": "human archive cleanup", "content_erased": True})
+        await self._discard_derived_index_if_terminal(bucket_id)
+        return {"ok": True, "deleted": bucket_id}
+
     async def hard_delete_test_bucket(self, bucket_id: str, *, reason: str = "") -> dict:
         """Erase only a bucket born as test data, with an explicit audit reason."""
         async with self._bucket_turn(bucket_id):

@@ -2219,6 +2219,7 @@
       <button onclick="runBucketBatch('forget')" style="height:32px;padding:0 12px;font-size:12px;display:inline-flex;align-items:center;gap:5px;"><i data-lucide="eye-off"></i> 主动遗忘</button>
       <button onclick="runBucketBatch('resolve')" style="height:32px;padding:0 12px;font-size:12px;display:inline-flex;align-items:center;gap:5px;"><i data-lucide="moon"></i> 沉底</button>
       <button onclick="runBucketBatch('archive')" style="height:32px;padding:0 12px;font-size:12px;display:inline-flex;align-items:center;gap:5px;"><i data-lucide="archive"></i> 归档</button>
+      <button onclick="deleteArchivedBuckets()" class="icon-btn" style="color:var(--negative)">永久删除已归档</button>
       <button class="developer-only" onclick="hardDeleteSelectedTests()" style="height:32px;padding:0 12px;font-size:12px;align-items:center;gap:5px;color:#b85c3c;"><i data-lucide="trash-2"></i> 永久删除测试桶</button>
     </div>
   </div>
@@ -5336,6 +5337,25 @@ async function runBucketBatch(action) {
   await loadBuckets();
 }
 
+async function deleteArchivedBuckets(singleId) {
+  const ids = singleId ? [singleId] : Array.from(selectedBucketIds);
+  if (!ids.length) return alert('请先在“归档”筛选中勾选条目。');
+  if (ids.length > 100) return alert('每次最多删除 100 条。');
+  if (ids.some(id => !(allBuckets || []).some(b => b.id === id && b.type === 'archived'))) return alert('只能永久删除已归档条目，请检查所选内容。');
+  if (!confirm('永久删除所选 ' + ids.length + ' 条已归档记忆及其索引？此操作无法撤销。已有备份和原始录入缓存不会一并删除。')) return;
+  try {
+    const response = await authFetch('/api/buckets/delete-archived', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,confirm:'DELETE ARCHIVED'})});
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '删除失败');
+    selectedBucketIds.clear();
+    closeDetail();
+    await loadBuckets();
+    await loadDuplicates();
+    alert('已永久删除 ' + (data.deleted || []).length + ' 条。' + ((data.errors || []).length ? '\n部分未完成：' + JSON.stringify(data.errors) : ''));
+  } catch (error) { alert(error.message); }
+}
+
 async function hardDeleteSelectedTests() {
   if (!developerMode) return;
   var byId = {};
@@ -5845,6 +5865,7 @@ async function showDetail(id) {
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketResolve(this.dataset.bucketId)" class="icon-btn">' + (meta.resolved ? '<i data-lucide="rotate-ccw"></i> 取消已解决' : '<i data-lucide="check"></i> 标记已解决') + '</button>' +
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketForget(this.dataset.bucketId)" class="icon-btn">' + (meta.dont_surface ? '<i data-lucide="eye"></i> 重新允许浮现' : '<i data-lucide="eye-off"></i> 主动遗忘') + '</button>' +
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketArchive(this.dataset.bucketId)" class="icon-btn"><i data-lucide="archive"></i> 归档</button>' +
+      (meta.type === 'archived' ? '<button data-bucket-id="' + escAttr(id) + '" onclick="deleteArchivedBuckets(this.dataset.bucketId)" class="icon-btn" style="color:var(--negative)">永久删除</button>' : '') +
       '</div>' +
       '<div class="detail-content">' + esc(displayContent) + '</div>' +
       renderEditForm(id, Object.assign({}, meta, {_content_for_edit: b.content}));

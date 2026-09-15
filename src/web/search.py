@@ -187,7 +187,7 @@ def register(mcp) -> None:
             eligible = [b for b in all_b if b.get("metadata", {}).get("type") == "dynamic"
                         and not b.get("metadata", {}).get("pinned") and not b.get("metadata", {}).get("protected")]
             pairs = await candidates(eligible, sh.embedding_engine, float(request.query_params.get("threshold", 0.80)))
-            return JSONResponse({"pairs": pairs, "total": len(pairs), "reviewed": history()})
+            return JSONResponse({"pairs": pairs, "total": len(pairs), "reviewed": [r for r in history() if await sh.bucket_mgr.get_including_archive(r["archived"])]})
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -206,6 +206,7 @@ def register(mcp) -> None:
             result = await scan(sh.bucket_mgr, sh.embedding_engine, buckets,
                                 float(payload.get("review_threshold", 0.80)),
                                 float(payload.get("auto_threshold", 0.985)))
+            result["reviewed"] = [r for r in result["reviewed"] if await sh.bucket_mgr.get_including_archive(r["archived"])]
             return JSONResponse(result)
         except (ValueError, TypeError) as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)

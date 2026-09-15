@@ -97,3 +97,13 @@ its group through transitive similarity. Decisions record representative IDs
 in duplicate-review.db; originals remain archived and can be restored.
 Undo and dismiss suppress the unchanged pair on later scans. Changed content
 is eligible again. This is scan-triggered, not a scheduled background job.
+
+## Permanent archive cleanup
+
+Dashboard archive details and bulk selection expose human-confirmed permanent
+deletion. The server rechecks archive location and metadata under the bucket
+lock, refuses pinned/protected or active memories, removes the Markdown file,
+and discards derived index state. No MCP hard-delete tool is added. Existing
+backups and 30-day raw ingestion receipts are retained independently; deletion
+is not a purge of those copies. Deleted archive targets no longer offer undo
+in duplicate review.

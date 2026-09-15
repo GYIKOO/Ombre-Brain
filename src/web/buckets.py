@@ -633,6 +633,35 @@ def register(mcp) -> None:
         return JSONResponse({"ok": not errors, "action": action,
                              "updated": updated, "missing": missing, "errors": errors})
 
+    @mcp.custom_route("/api/buckets/delete-archived", methods=["POST"])
+    async def api_delete_archived(request: Request) -> Response:
+        from starlette.responses import JSONResponse
+        err = sh._require_auth(request)
+        if err:
+            return err
+        try:
+            body = await sh._read_json_object(request)
+        except Exception:
+            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        ids = body.get("ids")
+        if body.get("confirm") != "DELETE ARCHIVED":
+            return JSONResponse({"error": "confirmation required"}, status_code=400)
+        if (not isinstance(ids, list) or not 1 <= len(ids) <= 100 or
+                any(not isinstance(i, str) or not i or len(i) > 128 for i in ids)):
+            return JSONResponse({"error": "ids must contain 1-100 valid IDs"}, status_code=400)
+        deleted, errors = [], []
+        for bid in dict.fromkeys(ids):
+            try:
+                result = await sh.bucket_mgr.hard_delete_archived_bucket(bid)
+                if result.get("ok"):
+                    deleted.append(bid)
+                else:
+                    errors.append({"id": bid, "error": result.get("error")})
+            except Exception:
+                logger.exception("Archive cleanup failed: %s", bid)
+                errors.append({"id": bid, "error": "cleanup_failed"})
+        return JSONResponse({"ok": not errors, "deleted": deleted, "errors": errors})
+
     @mcp.custom_route("/api/developer/buckets/hard-delete", methods=["POST"])
     async def api_developer_hard_delete(request: Request) -> Response:
         """Erase explicitly erasable test buckets after a developer confirmation phrase."""
