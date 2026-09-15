@@ -1,6 +1,8 @@
 import http from 'node:http';
 const host = process.argv[2];
-if (!host || !/^10\.0\.0\.\d+$/.test(host)) throw new Error('Expected local Wi-Fi IPv4 address');
+if (!host || !(host === '127.0.0.1' || /^10\.0\.0\.\d+$/.test(host))) throw new Error('Expected loopback or local Wi-Fi IPv4 address');
+const upstreamPort = Number(process.argv[3] || 18001);
+if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535) throw new Error('Invalid upstream port');
 export function adaptMessage(message) {
   if (message?.method === 'tools/call') {
     const shape = Object.fromEntries(Object.entries(message.params?.arguments || {}).map(([key,value]) => [key, value === null ? 'null' : Array.isArray(value) ? {type:'array',length:value.length,itemKeys:value[0] && typeof value[0]==='object' ? Object.keys(value[0]) : undefined} : typeof value === 'object' ? {type:'object',keys:Object.keys(value)} : {type:typeof value,...(typeof value==='string'?{length:value.length}:{})}]));
@@ -50,7 +52,7 @@ http.createServer(async (req, res) => {
   if (req.url !== '/mcp' || !['GET', 'POST', 'DELETE', 'OPTIONS'].includes(req.method)) {
     res.writeHead(404); res.end(); return;
   }
-  const headers = { host: '127.0.0.1:18001' };
+  const headers = { host: `127.0.0.1:${upstreamPort}` };
   for (const key of ['authorization', 'content-type', 'accept', 'origin', 'mcp-session-id', 'mcp-protocol-version', 'last-event-id', 'access-control-request-method', 'access-control-request-headers']) {
     if (req.headers[key]) headers[key] = req.headers[key];
   }
@@ -70,7 +72,7 @@ http.createServer(async (req, res) => {
       } catch { /* Let the MCP server report malformed JSON. */ }
     } catch { res.writeHead(400); res.end(); return; }
   }
-  const upstream = http.request({host:'127.0.0.1',port:18001,path:'/mcp',method:req.method,headers}, reply => {
+  const upstream = http.request({host:'127.0.0.1',port:upstreamPort,path:'/mcp',method:req.method,headers}, reply => {
     res.writeHead(reply.statusCode, reply.headers);
     reply.pipe(res);
   });
