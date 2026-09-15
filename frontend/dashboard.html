@@ -2082,6 +2082,23 @@
     }
     .tab-spacer { display: none; }
   }
+
+/* Duplicate cards: reading targets above, decisions below. */
+#duplicates-list .dup-entries button { background:var(--surface-solid) !important; border:1px solid var(--border) !important; box-shadow:none !important; }
+#duplicates-list .dup-actions button { background:var(--accent) !important; color:#fffdf5 !important; box-shadow:none !important; }
+#duplicates-list .dup-actions button.dup-dismiss { background:transparent !important; color:var(--text) !important; border:1px solid var(--border) !important; }
+.dup-card { border:1px solid var(--border); border-radius:10px; padding:16px; margin:12px 0; }
+.dup-score { font-size:12px; color:var(--text-muted); margin-bottom:10px; }
+.dup-entries { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.dup-entries button { display:block; width:100%; text-align:left; white-space:normal; overflow-wrap:anywhere; line-height:1.6; padding:12px 14px; border:1px solid var(--border); border-radius:6px; background:var(--surface-solid); color:inherit; cursor:pointer; }
+.dup-entries button:hover { border-color:var(--accent); }
+.dup-entry-label { display:block; font-size:12px; color:var(--text-muted); margin-bottom:4px; }
+.dup-actions { display:flex; flex-wrap:wrap; gap:10px; border-top:1px solid var(--border); padding-top:12px; margin-top:14px; }
+.dup-actions button { padding:8px 14px; border:1px solid var(--accent); border-radius:6px; background:var(--accent); color:#fff; font-size:13px; font-weight:600; cursor:pointer; }
+.dup-actions button:hover { filter:brightness(.93); }
+.dup-actions button.dup-dismiss { margin-left:auto; background:transparent; border-color:var(--border); color:inherit; font-weight:400; }
+@media(max-width:600px) { .dup-entries { grid-template-columns:1fr; } .dup-actions button.dup-dismiss { margin-left:0; } }
+
 </style>
 </head>
 <body>
@@ -9909,21 +9926,32 @@ async function loadDuplicates(runScan = false) {
     box.append(intro);
     for (const p of d.pairs || []) {
       const row = document.createElement('div');
-      row.style.cssText = 'border:1px solid var(--border);padding:12px;margin:8px 0';
+      row.className = 'dup-card';
       const score = document.createElement('div');
+      score.className = 'dup-score';
       score.textContent = (p.exact ? '正文一致' : '语义候选') + ' · ' + p.score.toFixed(3);
       row.append(score);
+      const entries = document.createElement('div');
+      entries.className = 'dup-entries';
+      row.append(entries);
       for (const [label, bucket] of [['A',p.a],['B',p.b]]) {
         const button = document.createElement('button');
-        button.textContent = label + '：' + bucket.name;
+        const tag = document.createElement('span');
+        tag.className = 'dup-entry-label';
+        tag.textContent = '记忆 ' + label + ' · 点击查看';
+        button.append(tag, document.createTextNode(bucket.name));
         button.onclick = () => showDetail(bucket.id);
-        row.append(button);
+        entries.append(button);
       }
+      const actions = document.createElement('div');
+      actions.className = 'dup-actions';
+      row.append(actions);
       for (const [label,action,a,b] of [['保留 A，归档 B','archive',p.a,p.b],['保留 B，归档 A','archive',p.b,p.a],['不同事件，忽略此对','dismiss',p.a,p.b]]) {
         const button = document.createElement('button');
         button.textContent = label;
         button.onclick = () => duplicateDecision(action,a.id,b.id,a.hash,b.hash);
-        row.append(button);
+        if (action === 'dismiss') button.className = 'dup-dismiss';
+        actions.append(button);
       }
       box.append(row);
     }
