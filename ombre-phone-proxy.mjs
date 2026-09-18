@@ -28,7 +28,7 @@ export function adaptMessage(message) {
     if (Array.isArray(args.messages) && args.messages.length && !Object.hasOwn(args, 'content') && !Object.hasOwn(args, 'items')) {
       const valid = args.messages.every(item => item && typeof item.role === 'string' && typeof item.content === 'string');
       if (!valid) return message;
-      const content = JSON.stringify({source:args.source, timestamp:args.timestamp, roundsCount:args.roundsCount, messages:args.messages.map(({role,content,timestamp}) => ({role,content,timestamp}))}, null, 2);
+      const content = JSON.stringify({source:args.source, timestamp:args.timestamp, roundsCount:args.roundsCount, messages:args.messages}, null, 2);
       const normalized = {content};
       if (typeof args.test_data === 'boolean') normalized.test_data = args.test_data;
       console.log(JSON.stringify({event:'raw-dialogue-adaptation',messages:args.messages.length,contentLength:content.length}));
