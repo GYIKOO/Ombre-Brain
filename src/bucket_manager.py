@@ -1446,7 +1446,10 @@ class BucketManager:
         bucket_id = preferred_bucket_id
         # 桶名 = "YYYY-MM-DD HH-MM-SS [LLM生成的标题]"，无标题时仅用时间戳。
         # 使用连字符替代冒号，避免 sanitize_name 后续编辑时把冒号去掉破坏可读性。
-        _ts = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        from ombrebrain.storage.ingest_time import bucket_time
+        historical_time = bucket_time(source_tool)
+        event_clock = datetime.fromisoformat(historical_time["event_start"]).astimezone() if historical_time else datetime.now()
+        _ts = event_clock.strftime("%Y-%m-%d %H-%M-%S")
         _clean = sanitize_name(title or name) if (title or name) else ""
         bucket_name = (f"{_ts} {_clean}" if (_clean and _clean != "unnamed") else _ts)[:80]
         # feel buckets are allowed to have empty domain; others default to ["未分类"]
@@ -1475,7 +1478,8 @@ class BucketManager:
 
         # --- Build YAML frontmatter metadata / 构建元数据 ---
         # 越界不静默 clamp：会产生 OB-W001/OB-W002 提示走到 MCP 返回末尾
-        created_at = now_iso()
+        processed_at = now_iso()
+        created_at = historical_time.get("event_start", processed_at)
         metadata = {
             "id": bucket_id,
             "name": bucket_name,
@@ -1486,9 +1490,12 @@ class BucketManager:
             "importance": _clamp_importance(importance, f"create:{bucket_id}"),
             "type": bucket_type,
             "created": created_at,
-            "last_active": created_at,
+            "last_active": historical_time.get("event_end", created_at),
             "activation_count": 0,
         }
+        if historical_time:
+            metadata.update(historical_time)
+            metadata["processed_at"] = processed_at
         if title:
             metadata["title"] = title
         # Letter access metadata is written atomically with the original
@@ -2618,7 +2625,17 @@ class BucketManager:
         # 长期不一致（次数不涨、时间却变新）。只有真正的「新事件写入」才把这条记忆
         # 当作被重新激活一次——由 bump_active=True 显式触发（如 hold/grow 合并近邻桶），
         # 同步刷新 last_active 并累加 activation_count，语义与 touch() 一致。
-        if bump_active:
+        from ombrebrain.storage.ingest_time import bucket_time
+        replayed = bucket_time(kwargs.get("last_merged_by"))
+        if replayed:
+            # Preserve the existing bucket timeline; record the recovered source separately.
+            raw_entries = post.get("recovered_sources")
+            entries = [e for e in raw_entries if isinstance(e, dict)] if isinstance(raw_entries, list) else []
+            entry = {**replayed, "processed_at": now_iso()}
+            identity = (entry["recovery_receipt_id"], entry["event_start"], entry["event_end"])
+            entries = [e for e in entries if (e.get("recovery_receipt_id"), e.get("event_start"), e.get("event_end")) != identity]
+            post["recovered_sources"] = entries + [entry]
+        if bump_active and not replayed:
             post["last_active"] = now_iso()
             post["activation_count"] = int(post.get("activation_count") or 0) + 1
 

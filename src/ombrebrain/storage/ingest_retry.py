@@ -80,7 +80,9 @@ async def start_retry(receipt_id, dispatch=None):
         token = retry_parent.set(receipt_id)
         try:
             function = dispatch or importlib.import_module("tools." + record["tool"]).dispatch
-            result = await function(**record["arguments"])
+            from .ingest_time import replay_time
+            with replay_time(record):
+                result = await function(**record["arguments"])
             attempt.update(status=outcome(record["tool"], result), result=str(result))
         except BaseException as error:
             attempt.update(status="interrupted" if isinstance(error, asyncio.CancelledError) else "failed", error_type=type(error).__name__)

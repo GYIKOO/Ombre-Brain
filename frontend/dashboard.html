@@ -5864,6 +5864,8 @@ async function showDetail(id) {
         weightHtml +
         triggerHtml +
       '</div>' +
+      (meta.event_start ? '<div style="margin:10px 0;color:var(--text-dim)">记忆时间：' + esc(meta.event_start) + ' ～ ' + esc(meta.event_end || meta.event_start) + '<br>时间依据：' + (meta.time_basis === 'original_messages' ? '原文消息时间' : '首次接收时间（原文无可靠时间）') + '<br>实际处理时间：' + esc(meta.processed_at || '—') + '</div>' : '') +
+      (Array.isArray(meta.recovered_sources) ? meta.recovered_sources.filter(entry => entry && typeof entry === "object").map(entry => '<div style="margin:10px 0;color:var(--text-dim)">补入的历史记录：' + esc(entry.event_start) + ' ～ ' + esc(entry.event_end) + '<br>实际处理时间：' + esc(entry.processed_at) + '</div>').join('') : '') +
       (meta.njj_event_date ? '<div style="margin:10px 0;color:var(--text-dim)">njj 原始事件日期：' + esc(typeof meta.njj_event_date === 'number' ? new Date(meta.njj_event_date).toISOString() : String(meta.njj_event_date)) + '</div>' : '') +
       triggeredFeelsHtml +
       deletionRequestHtml +

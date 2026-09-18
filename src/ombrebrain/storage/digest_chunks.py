@@ -57,6 +57,11 @@ def map_ranges(items, segment, offset, original):
                 ]
             )
         item["source_ranges"] = ranges
+        # Derived from the actual segment, including reused old checkpoints.
+        item["_ingest_chunk_ranges"] = [[
+            bisect.bisect_right(global_lines, offset),
+            bisect.bisect_right(global_lines, offset + max(0, len(segment) - 1)),
+        ]]
         result.append(item)
     return result
 

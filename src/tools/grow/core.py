@@ -32,6 +32,7 @@ import asyncio
 import uuid
 
 from utils import normalize_memory_title
+from ombrebrain.storage.ingest_time import timed_item
 
 try:
     from errors import llm_step_failed_error, safe_error_detail
@@ -69,7 +70,11 @@ async def grow_core(content: str, test_data: bool = False) -> str:
 
     if not isinstance(items, list) or not items:
         raise ToolInputError("内容为空或整理失败。")
-    payload_err = check_grow_items_payload(items)
+    # Segment bounds are trusted internal annotations, not public grow fields.
+    payload_err = check_grow_items_payload([
+        {k: v for k, v in item.items() if k != "_ingest_chunk_ranges"}
+        if isinstance(item, dict) else item for item in items
+    ])
     if payload_err:
         rt.logger.warning(f"grow digest output rejected: {payload_err}")
         return payload_err
@@ -109,6 +114,7 @@ async def grow_core(content: str, test_data: bool = False) -> str:
 
     batch_id = f"g_{uuid.uuid4().hex[:12]}"
 
+    @timed_item(lambda: content)
     async def _process_item(item: dict) -> dict:
         """处理 digest 拆出的一条独立 item，返回结构化结果供 gather 后汇总。"""
         size_err = check_content_size(item.get("content", ""))
@@ -234,6 +240,7 @@ async def grow_items(items: list, source_content: str = "", test_data: bool = Fa
 
     batch_id = f"g_{uuid.uuid4().hex[:12]}"
 
+    @timed_item(lambda: source_content)
     async def _process_item(item: dict) -> dict:
         """处理一条预拆分 item：只打标不改写正文，独立于其它 item。"""
         content_str = item["content"]
