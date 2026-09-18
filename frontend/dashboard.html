@@ -3419,6 +3419,13 @@
       </div>
     </div>
 
+    <div class="config-section" id="sec-ingest-retries" data-sgroup="backup">
+      <h3>接收缓存与手动重试</h3>
+      <p style="color:var(--text-dim);font-size:13px;">查看尚未确认入库的 hold / grow 原文缓存。点击重试才会使用当前模型配置调用 API；相同输入和配置可复用已完成的整理分段。缓存保留 30 天。部分入库、中断或结果不明确时，请先核对记忆桶，重试可能产生重复。</p>
+      <button class="icon-btn" onclick="loadIngestRetries()">查看 / 刷新失败记录</button>
+      <div id="ingest-retries-list" style="margin-top:14px;"></div>
+    </div>
+
     <!-- ⑧ 数据备份与迁移（从「危险区」正名：这里全是安全、可逆的操作，鼓励常用） -->
     <div class="config-section" id="sec-backup" data-sgroup="backup" style="margin-top:40px;">
       <h3>数据备份与迁移 <span class="sec-en">Backup &amp; Migration</span></h3>
@@ -9934,6 +9941,53 @@ async function undoDuplicate(id) {
     await loadDuplicates();
   } catch (error) { alert(error.message); }
 }
+let ingestRetryTimer;
+async function loadIngestRetries() {
+  clearTimeout(ingestRetryTimer);
+  const box = document.getElementById('ingest-retries-list');
+  try {
+    const response = await fetch(BASE + '/api/ingest-retries');
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || '无法读取缓存');
+    box.replaceChildren();
+    const labels = {failed:'处理失败',interrupted:'处理曾中断',partial:'部分入库',uncertain:'结果待核对',running:'处理中',succeeded:'重试已成功'};
+    if (!data.receipts.length) box.textContent = '没有待重试的缓存记录。';
+    for (const receipt of data.receipts) {
+      const card = document.createElement('div');
+      card.className = 'dup-card';
+      const title = document.createElement('p');
+      title.textContent = `${receipt.tool} · ${new Date(receipt.received_at * 1000).toLocaleString()} · ${labels[receipt.status] || receipt.status} · ${receipt.characters} 字符 · 已重试 ${receipt.attempts} 次`;
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = '查看原文片段与处理结果';
+      const text = document.createElement('pre');
+      text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;';
+      text.textContent = receipt.preview + '\n\n' + receipt.detail;
+      details.append(summary, text);
+      card.append(title, details);
+      if (!['running','succeeded'].includes(receipt.status)) {
+        const button = document.createElement('button');
+        button.className = 'icon-btn';
+        button.style.marginTop = '12px';
+        button.textContent = '用当前配置重新处理';
+        button.onclick = async () => {
+          if (!confirm('使用当前模型配置重新处理这条缓存？可能产生 API 费用；若此前部分入库，可能产生重复记忆。')) return;
+          button.disabled = true;
+          try {
+            const result = await fetch(BASE + '/api/ingest-retries', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:receipt.id,confirm:true})});
+            const payload = await result.json();
+            if (!result.ok) throw new Error(payload.error || '重试启动失败');
+            await loadIngestRetries();
+          } catch (error) { alert(error.message); button.disabled = false; }
+        };
+        card.append(button);
+      }
+      box.append(card);
+    }
+    if (data.receipts.some(row => row.status === 'running')) ingestRetryTimer = setTimeout(loadIngestRetries, 4000);
+  } catch (error) { box.textContent = error.message; }
+}
+
 async function loadDuplicates(runScan = false) {
   const box = document.getElementById('duplicates-list');
   box.textContent = '本地比较已有向量…';

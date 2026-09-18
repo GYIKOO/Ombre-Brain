@@ -107,3 +107,20 @@ and discards derived index state. No MCP hard-delete tool is added. Existing
 backups and 30-day raw ingestion receipts are retained independently; deletion
 is not a purge of those copies. Deleted archive targets no longer offer undo
 in duplicate review.
+
+
+## 手动恢复（Dashboard）
+
+设置 → 备份与迁移 → 接收缓存与手动重试 → 查看 / 刷新失败记录。
+对指定原始 hold/grow 请求点「用当前配置重新处理」，确认后在后台运行；
+无需 NJJ 再推送，也不会自动循环调用 API。页面定期读取本地状态，不调用模型。
+修正模型配置后再重试；相同输入、提示词和配置下可以复用 digest 分段检查点。
+失败请求保留原始参数和结果，manual_retry 保存最近一次尝试状态及累计次数，
+每次实际重放另有带 retry_of 的完整 receipt。中途重启会显示「处理曾中断」。
+列表不包含内部 digest_chunks 检查点，也不重复展示重试生成的子记录。
+
+部分写入、崩溃后的不确定结果不具备 exactly-once 保证，重试可能产生重复，
+请先核对桶，必要时使用已有查重功能。列表不代表 NJJ 的全部历史覆盖情况，
+原始请求正常返回但附带打标或向量警告、正文已保存的，不属于重试失败。
+仍采用30天接收缓存保留期；过期原文无法从此入口恢复。运行中的请求不会被清理。
+这是单服务进程内的手动恢复功能，不是跨进程任务队列。

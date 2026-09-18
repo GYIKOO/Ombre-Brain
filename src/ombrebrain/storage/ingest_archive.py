@@ -15,7 +15,11 @@ import tempfile
 import time
 import uuid
 from contextlib import suppress
+from contextvars import ContextVar
 from pathlib import Path
+
+retry_parent = ContextVar("ingest_retry_parent", default=None)
+active_receipts = set()
 
 RETENTION_SECONDS = 30 * 86400
 _NAME = re.compile(r"receipt-[0-9a-f]{32}\.json\Z")
@@ -64,6 +68,8 @@ class ReceiptArchive:
             "status": "received",
             "arguments": arguments,
         }
+        if retry_parent.get():
+            record["retry_of"] = retry_parent.get()
         path = self.root / ("receipt-" + record["receipt_id"] + ".json")
         self._write(path, record)
         try:
@@ -92,7 +98,7 @@ class ReceiptArchive:
                     and path.name == f"receipt-{record.get('receipt_id')}.json"
                     and isinstance(received, (int, float))
                 )
-                if valid and received < cutoff:
+                if valid and received < cutoff and record.get("receipt_id") not in active_receipts:
                     path.unlink()
             except (ValueError, TypeError):
                 continue  # Never delete an unrecognized or damaged file.
@@ -110,6 +116,7 @@ def archive_ingest(tool):
             # Synchronous durable write deliberately completes before any await
             # or API call. If this fails, no downstream memory work is attempted.
             receipt = archive.begin(tool, dict(arguments.arguments))
+            active_receipts.add(receipt[1]["receipt_id"])
             try:
                 result = await function(*args, **kwargs)
             except BaseException as error:
@@ -119,6 +126,8 @@ def archive_ingest(tool):
                 except OSError:
                     _log.exception("Receipt status update failed; original receipt remains")
                 raise
+            finally:
+                active_receipts.discard(receipt[1]["receipt_id"])
             try:
                 # A returned string can contain partial failures or in-progress
                 # notices. Do not falsely label it as successfully stored.

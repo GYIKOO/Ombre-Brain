@@ -21,6 +21,7 @@ from . import dashboard
 from . import system
 from . import meta
 from . import search
+from . import ingest_retry
 from . import plans
 from . import letters
 from . import hooks
@@ -43,6 +44,7 @@ _WEB_MODULES = (
     ("web.system", system.register),
     ("web.meta", meta.register),
     ("web.search", search.register),
+    ("web.ingest_retry", ingest_retry.register),
     ("web.plans", plans.register),
     ("web.letters", letters.register),
     ("web.hooks", hooks.register),
