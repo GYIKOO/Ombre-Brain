@@ -137,3 +137,26 @@ created 和桶名使用范围起点，last_active 使用终点，processed_at �
 合并已有桶时保留原桶 created/name 时间前缀和活跃时间，追加 recovered_sources 时间记录。
 详细页展示历史时间依据和实际处理时间。旧 NJJ 导入桶不会批量改写。
 缓存分段不需要重新调用模型即可补齐时间归属；普通实时写入不受此修复影响。
+
+
+### DeepSeek 整理默认关闭 thinking
+
+OpenAI-compatible 模式下，deepseek-flash / deepseek-pro / deepseek-chat /
+deepseek-v4-flash / deepseek-v4-pro（含 provider/model 前缀）未显式配置推理参数时，
+整理、打标、压缩和合并请求默认发送 thinking.type=disabled。
+旧配置无需迁移，更新并重启即可；Dashboard 热更新也遵循同一规则。
+其他模型不自动发送 DeepSeek 专有参数；Gemini 原有 thinking_budget 默认0不变。
+第三方中转仍需支持对应模型的 thinking 参数，不能保证其服务端遵循。
+
+如确实要开启，在 config.yaml 的既有 dehydration 配置中添加（保留其他配置）：
+
+```yaml
+dehydration:
+  extra_body:
+    thinking:
+      type: enabled
+```
+
+显式 thinking / reasoning / reasoning_effort 优先，不自动覆盖已有选择。
+分段缓存指纹包含实际生效的请求参数，切换 thinking 后不会误用另一模式的检查点。
+因此旧默认开启模式的分段可能重新整理；已有显式关闭模式的同参数检查点仍可复用。

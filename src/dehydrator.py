@@ -47,6 +47,27 @@ from ombrebrain.integrations.provider_detect import (
 
 logger = logging.getLogger("ombre_brain.dehydrator")
 
+# Only toggle-capable DeepSeek chat models receive this vendor extension.
+# Unknown providers/models and reasoning-only models keep their own protocol.
+_DEEPSEEK_SWITCHABLE_MODELS = frozenset({
+    "deepseek-flash", "deepseek-pro", "deepseek-chat",
+    "deepseek-v4-flash", "deepseek-v4-pro",
+})
+
+def dehydration_extra_body(model, api_format, configured):
+    """Default routine memory work to non-thinking; explicit settings win.
+
+    Resolve at request time so existing installations and dashboard hot reloads
+    use the same behavior without rewriting the user's saved configuration.
+    """
+    body = dict(configured) if isinstance(configured, dict) else {}
+    model_id = str(model or "").strip().lower().rsplit("/", 1)[-1]
+    explicit = any(key in body for key in ("thinking", "reasoning", "reasoning_effort"))
+    if api_format == "openai_compat" and model_id in _DEEPSEEK_SWITCHABLE_MODELS and not explicit:
+        body["thinking"] = {"type": "disabled"}
+    return body
+
+
 
 # ============================================================
 # 调参面板 / Tunable constants
@@ -584,7 +605,7 @@ class Dehydrator:
                 {"role": "user", "content": user},
             ],
             temperature=temperature if temperature is not None else self.temperature,
-            extra_body=self.extra_body or None,
+            extra_body=dehydration_extra_body(self.model, self.api_format, self.extra_body) or None,
             **chat_completion_token_limit(
                 self.model,
                 max_tokens if max_tokens is not None else self.max_tokens,
@@ -1095,7 +1116,7 @@ class Dehydrator:
                 "model": self.model, "api_format": self.api_format,
                 "endpoint": str(getattr(self.client, "base_url", "")),
                 "human": self.human, "max_tokens": self.digest_max_tokens,
-                "extra_body": self.extra_body, "prompt": DIGEST_PROMPT,
+                "extra_body": dehydration_extra_body(self.model, self.api_format, self.extra_body), "prompt": DIGEST_PROMPT,
             }, self._api_digest_detailed)
         try:
             result, 诊断 = await self._api_digest_detailed(content)
