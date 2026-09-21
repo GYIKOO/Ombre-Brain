@@ -2,12 +2,12 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import pytest
-from dehydrator import Dehydrator, dehydration_extra_body
+from dehydrator import Dehydrator, dehydration_extra_body, DIGEST_PROMPT
 
 @pytest.mark.parametrize("model", ["deepseek-flash", "deepseek-pro", "deepseek-chat", "deepseek-v4-flash", "deepseek/deepseek-v4-pro"])
-def test_switchable_models_default_off(model):
+def test_switchable_models_default_low(model):
     configured = {"other": "keep"}
-    assert dehydration_extra_body(model, "openai_compat", configured) == {"other": "keep", "thinking": {"type": "disabled"}}
+    assert dehydration_extra_body(model, "openai_compat", configured) == {"other": "keep", "thinking": {"type": "enabled"}, "reasoning_effort": "low"}
     assert configured == {"other": "keep"}
 
 @pytest.mark.parametrize("configured", [
@@ -28,16 +28,18 @@ async def test_real_request_defaults_and_hot_reload(tmp_path):
     original = d.client
     d.client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     try:
-        await d._chat_once("system", "synthetic")
-        assert create.call_args.kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
+        await d._chat_once(DIGEST_PROMPT, "synthetic")
+        assert create.call_args.kwargs["extra_body"] == {"thinking": {"type": "enabled"}, "reasoning_effort": "low"}
         d.extra_body = {"thinking": {"type": "enabled"}}
-        await d._chat_once("system", "synthetic")
+        await d._chat_once(DIGEST_PROMPT, "synthetic")
         assert create.call_args.kwargs["extra_body"] == d.extra_body
         d.extra_body = {}  # dashboard save must not drop the default
-        await d._chat_once("system", "synthetic")
+        await d._chat_once(DIGEST_PROMPT, "synthetic")
+        assert create.call_args.kwargs["extra_body"]["reasoning_effort"] == "low"
+        await d._chat_once("tagging or retrieval compression", "synthetic")
         assert create.call_args.kwargs["extra_body"]["thinking"]["type"] == "disabled"
         d.model = "gpt-5"  # no sticky vendor extension after changing model
-        await d._chat_once("system", "synthetic")
+        await d._chat_once(DIGEST_PROMPT, "synthetic")
         assert create.call_args.kwargs["extra_body"] is None
     finally:
         d.close()
@@ -55,7 +57,7 @@ async def test_chunk_cache_uses_effective_thinking_settings(tmp_path, monkeypatc
         d.extra_body = {"thinking": {"type": "enabled"}}
         await d.digest("x" * 5000)
         enabled = digest.call_args.args[1]["extra_body"]
-        assert disabled == {"thinking": {"type": "disabled"}}
+        assert disabled == {"thinking": {"type": "enabled"}, "reasoning_effort": "low"}
         assert enabled != disabled
     finally:
         await d.client.close()

@@ -19,3 +19,16 @@ assert.equal(JSON.stringify(request), before);
 const native = {method:'tools/call', params:{name:'grow', arguments:{content:'甲与乙聊天'}}};
 assert.equal(ctx.adaptMessage(native), native);
 console.log('Speaker metadata preserved; native calls and source unchanged.');
+
+const actor = {id:'char-a', name:'乙', nested:{group:'room-a'}};
+const actorReq = {...request, params:{...request.params, arguments:{...request.params.arguments, _actor:actor}}};
+const actorBefore = JSON.stringify(actorReq);
+const adapted = JSON.parse(ctx.adaptMessage(actorReq).params.arguments.content);
+assert.deepEqual(adapted._actor, actor);
+assert.deepEqual(adapted.messages, messages);
+assert.equal(JSON.stringify(actorReq), actorBefore);
+assert.equal(Object.hasOwn(ctx.adaptMessage(actorReq).params.arguments, '_actor'), false);
+const held = ctx.adaptMessage({method:'tools/call', params:{name:'hold', arguments:{text:'既有总结', _actor:actor}}});
+assert.equal(held.params.arguments.content, '既有总结');
+assert.deepEqual(JSON.parse(held.params.arguments.source_content.split('\n').slice(1).join('\n'))._actor, actor);
+console.log('Actor metadata preserved for grow and hold source evidence.');

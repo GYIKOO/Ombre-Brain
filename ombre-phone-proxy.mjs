@@ -17,7 +17,7 @@ export function adaptMessage(message) {
       const normalized = {...Object.fromEntries(Object.entries(args).filter(([key]) => allowed.includes(key))), content};
       if (!Object.hasOwn(normalized,'tags') && Array.isArray(args.topics) && args.topics.every(t=>typeof t==='string')) normalized.tags = args.topics.join(',');
       // Keep source metadata as evidence, without duplicating or rewriting the summary body.
-      if (!normalized.source_content) normalized.source_content = 'Phone summary source metadata:\n' + JSON.stringify({content,topics:args.topics,emotion:args.emotion,timestamp:args.timestamp});
+      if (!normalized.source_content) normalized.source_content = 'Phone summary source metadata:\n' + JSON.stringify({content,topics:args.topics,emotion:args.emotion,timestamp:args.timestamp,_actor:args._actor});
       console.log(JSON.stringify({event:'summary-adaptation',contentLength:content.length,resultKeys:Object.keys(normalized)}));
       return {...message,params:{...message.params,arguments:normalized}};
     }
@@ -28,7 +28,7 @@ export function adaptMessage(message) {
     if (Array.isArray(args.messages) && args.messages.length && !Object.hasOwn(args, 'content') && !Object.hasOwn(args, 'items')) {
       const valid = args.messages.every(item => item && typeof item.role === 'string' && typeof item.content === 'string');
       if (!valid) return message;
-      const content = JSON.stringify({source:args.source, timestamp:args.timestamp, roundsCount:args.roundsCount, messages:args.messages}, null, 2);
+      const content = JSON.stringify({source:args.source, timestamp:args.timestamp, roundsCount:args.roundsCount, _actor:args._actor, messages:args.messages}, null, 2);
       const normalized = {content};
       if (typeof args.test_data === 'boolean') normalized.test_data = args.test_data;
       console.log(JSON.stringify({event:'raw-dialogue-adaptation',messages:args.messages.length,contentLength:content.length}));
