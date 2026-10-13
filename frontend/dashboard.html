@@ -9924,15 +9924,32 @@ function resetMigrate() {
   document.getElementById('migrate-progress-panel').style.display = 'none';
 }
 
+let duplicateResults = null;
+let duplicateReviewBusy = false;
+let duplicateLoading = false;
+
 async function duplicateDecision(action, a, b, ah, bh) {
+  if (duplicateReviewBusy || duplicateLoading) return;
   if (action === 'archive' && !confirm('保留所选代表条目，将另一条归档？原文保留，可在下方撤销。')) return;
+  duplicateReviewBusy = true;
   try {
     const response = await fetch(BASE + '/api/duplicates/review', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,a,b,ah,bh})});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || '操作失败');
+    if (duplicateResults) {
+      duplicateResults.pairs = duplicateResults.pairs.filter(p => action === 'archive'
+        ? p.a.id !== b && p.b.id !== b
+        : !((p.a.id === a && p.b.id === b) || (p.a.id === b && p.b.id === a)));
+      duplicateResults.total = duplicateResults.pairs.length;
+      if (action === 'archive') {
+        duplicateResults.reviewed = [...(duplicateResults.reviewed || []),
+          {id:result.id, representative:a, archived:b, state:'archived'}];
+      }
+      renderDuplicates(duplicateResults);
+    }
     await loadBuckets();
-    await loadDuplicates();
   } catch (error) { alert(error.message); }
+  finally { duplicateReviewBusy = false; }
 }
 async function undoDuplicate(id) {
   try {
@@ -9991,7 +10008,9 @@ async function loadIngestRetries() {
 }
 
 async function loadDuplicates(runScan = false) {
+  if (duplicateReviewBusy || duplicateLoading) return;
   const box = document.getElementById('duplicates-list');
+  duplicateLoading = true;
   box.textContent = '本地比较已有向量…';
   try {
     const review_threshold = Number(document.getElementById('dup-review-threshold').value);
@@ -10003,6 +10022,19 @@ async function loadDuplicates(runScan = false) {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || '加载失败');
     if (runScan) await loadBuckets();
+    duplicateResults = d;
+    renderDuplicates(d);
+  } catch (e) {
+    if (duplicateResults) renderDuplicates(duplicateResults);
+    else box.replaceChildren();
+    const error = document.createElement('p');
+    error.textContent = '加载失败：' + e.message;
+    box.prepend(error);
+  } finally { duplicateLoading = false; }
+}
+
+function renderDuplicates(d) {
+    const box = document.getElementById('duplicates-list');
     box.replaceChildren();
     const intro = document.createElement('p');
     intro.textContent = '本次自动归档 ' + (d.automatic || []).length + ' 条；待人工筛选 ' + d.total + ' 对。仅比较现有向量，无额外 API 请求。请点标题核对正文与时间。' + (d.errors || []).join('；');
@@ -10047,7 +10079,6 @@ async function loadDuplicates(runScan = false) {
       button.onclick = () => undoDuplicate(item.id);
       row.append(button); box.append(row);
     }
-  } catch (e) { box.textContent = '加载失败：' + e.message; }
 }
 
 
