@@ -1134,7 +1134,7 @@ class BucketManager:
                 exc,
             )
 
-    def _invalidate_bm25(self) -> None:
+    def _invalidate_bm25(self, *, deleted_bucket_id: str | None = None) -> None:
         """写操作后调用：标记 BM25 需重建 + 清活跃桶缓存（集合已变，缓存作废）。
 
         名字沿用历史（各写路径已在调它），实际是「集合变更」的统一失效钩子。
@@ -1146,8 +1146,13 @@ class BucketManager:
             self._active_file_state = {}
             self._last_file_state_check = 0.0
         with self._bucket_path_index_guard:
-            self._bucket_path_index_ready = False
-            self._bucket_path_index = {}
+            if deleted_bucket_id is not None:
+                # A managed removal changes only this ID; preserve the other
+                # paths and any complete-index negative lookup guarantee.
+                self._bucket_path_index.pop(deleted_bucket_id, None)
+            else:
+                self._bucket_path_index_ready = False
+                self._bucket_path_index = {}
 
     def _cache_bump(
         self,
@@ -2727,7 +2732,7 @@ class BucketManager:
             if post.get("protected") or post.get("pinned"):
                 return {"ok": False, "error": "protected"}
             os.remove(file_path)
-            self._invalidate_bm25()
+            self._invalidate_bm25(deleted_bucket_id=bucket_id)
             self._record_ledger_event("TraceHardDeleted", bucket_id, "archived", "",
                                       {}, {"reason": "human archive cleanup", "content_erased": True})
         await self._discard_derived_index_if_terminal(bucket_id)

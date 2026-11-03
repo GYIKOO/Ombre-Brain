@@ -5344,23 +5344,39 @@ async function runBucketBatch(action) {
   await loadBuckets();
 }
 
+let archiveDeleteBusy = false;
 async function deleteArchivedBuckets(singleId) {
+  if (archiveDeleteBusy) return;
   const ids = singleId ? [singleId] : Array.from(selectedBucketIds);
   if (!ids.length) return alert('请先在“归档”筛选中勾选条目。');
   if (ids.length > 100) return alert('每次最多删除 100 条。');
   if (ids.some(id => !(allBuckets || []).some(b => b.id === id && b.type === 'archived'))) return alert('只能永久删除已归档条目，请检查所选内容。');
   if (!confirm('永久删除所选 ' + ids.length + ' 条已归档记忆及其索引？此操作无法撤销。已有备份和原始录入缓存不会一并删除。')) return;
+  archiveDeleteBusy = true;
+  const buttons = Array.from(document.querySelectorAll('button[onclick*="deleteArchivedBuckets"]'));
+  const labels = buttons.map(button => button.innerHTML);
+  buttons.forEach(button => { button.disabled = true; button.textContent = '正在删除…'; });
   try {
     const response = await authFetch('/api/buckets/delete-archived', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,confirm:'DELETE ARCHIVED'})});
     if (!response) return;
     const data = await readJsonSafe(response);
     if (!response.ok) throw new Error(data.error || '删除失败');
-    selectedBucketIds.clear();
+    const deleted = new Set(data.deleted || []);
+    deleted.forEach(id => selectedBucketIds.delete(id));
+    if (duplicateResults) {
+      duplicateResults.pairs = (duplicateResults.pairs || []).filter(p => !deleted.has(p.a.id) && !deleted.has(p.b.id));
+      duplicateResults.total = duplicateResults.pairs.length;
+      duplicateResults.reviewed = (duplicateResults.reviewed || []).filter(item => !deleted.has(item.archived) && !deleted.has(item.representative));
+      renderDuplicates(duplicateResults);
+    }
     closeDetail();
     await loadBuckets();
-    await loadDuplicates();
     alert('已永久删除 ' + (data.deleted || []).length + ' 条。' + ((data.errors || []).length ? '\n部分未完成：' + JSON.stringify(data.errors) : ''));
   } catch (error) { alert(error.message); }
+  finally {
+    archiveDeleteBusy = false;
+    buttons.forEach((button, i) => { button.disabled = false; button.innerHTML = labels[i]; });
+  }
 }
 
 async function hardDeleteSelectedTests() {
