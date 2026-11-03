@@ -408,3 +408,50 @@ def test_config_edit_invalidates_cache(monkeypatch, tmp_path):
     _os.utime(cfg, (stat.st_atime + 5, stat.st_mtime + 5))
 
     assert get_ai_name() == "新名字"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persist, fail_write", [(True, False), (False, False), (True, True)])
+async def test_normal_provider_save_survives_inherited_restart_environment(monkeypatch, tmp_path, persist, fail_write):
+    import utils
+    from dehydrator import Dehydrator
+    config_path = tmp_path / "config.yaml"
+    old_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    new_url = "https://new.example/v1"
+    runtime = {"buckets_dir": str(tmp_path / "vault"), "dehydration": {
+        "base_url": old_url, "model": "old-model", "api_key": "",
+    }}
+    monkeypatch.setattr(utils, "config_file_path", lambda: str(config_path))
+    monkeypatch.setenv("OMBRE_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("OMBRE_VAULT_DIR", str(tmp_path / "vault"))
+    monkeypatch.setenv("OMBRE_COMPRESS_BASE_URL", old_url)
+    monkeypatch.setenv("OMBRE_BASE_URL", old_url)
+    monkeypatch.setenv("OMBRE_COMPRESS_MODEL", "old-model")
+    monkeypatch.setenv("OMBRE_COMPRESS_FORMAT", "openai_compat")
+    monkeypatch.setenv("OMBRE_COMPRESS_API_FORMAT", "openai_compat")
+    monkeypatch.setattr(config_api.sh, "_require_auth", lambda request: None)
+    monkeypatch.setattr(config_api.sh, "config", runtime)
+    monkeypatch.setattr(config_api.sh, "dehydrator", Dehydrator(runtime))
+    if fail_write:
+        def fail_persist(mutate):
+            raise OSError("disk full")
+        monkeypatch.setattr(config_api, "atomic_update_config_yaml", fail_persist)
+    mcp = FakeMCP()
+    config_api.register(mcp)
+    response = await mcp.routes[("POST", "/api/config")](JsonRequest({
+        "dehydration": {"base_url": new_url, "model": "new-model", "api_format": "anthropic"},
+        "persist": persist,
+    }))
+    if fail_write:
+        assert response.status_code == 500
+        assert runtime["dehydration"]["base_url"] == old_url
+        assert os.environ["OMBRE_COMPRESS_BASE_URL"] == old_url
+        assert os.environ["OMBRE_BASE_URL"] == old_url
+        return
+    assert response.status_code == 200, response.body
+    assert runtime["dehydration"]["base_url"] == new_url
+    # load_config reads the same environment inherited by os.execv.
+    restarted = load_config(str(config_path))
+    assert restarted["dehydration"]["base_url"] == (new_url if persist else old_url)
+    assert restarted["dehydration"]["model"] == ("new-model" if persist else "old-model")
+    assert restarted["dehydration"]["api_format"] == ("anthropic" if persist else "openai_compat")

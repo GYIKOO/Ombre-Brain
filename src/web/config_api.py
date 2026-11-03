@@ -845,6 +845,33 @@ def register(mcp) -> None:
 
             try:
                 persisted_after = atomic_update_config_yaml(_mutate)
+                # execv inherits runtime env values set by /api/env-config.
+                # Keep existing provider overrides aligned only after a durable
+                # save; transient edits and failed writes must not alter them.
+                provider_env_fields = {
+                    "dehydration": {
+                        "base_url": ("OMBRE_COMPRESS_BASE_URL", "OMBRE_BASE_URL"),
+                        "model": ("OMBRE_COMPRESS_MODEL",),
+                        "api_format": ("OMBRE_COMPRESS_FORMAT", "OMBRE_COMPRESS_API_FORMAT"),
+                        "timeout_seconds": ("OMBRE_COMPRESS_TIMEOUT_SECONDS",),
+                    },
+                    "embedding": {
+                        "base_url": ("OMBRE_EMBED_BASE_URL",),
+                        "model": ("OMBRE_EMBED_MODEL",),
+                        "api_format": ("OMBRE_EMBED_FORMAT",),
+                        "timeout_seconds": ("OMBRE_EMBED_TIMEOUT_SECONDS",),
+                        "backend": ("OMBRE_EMBED_BACKEND",),
+                    },
+                }
+                for section, fields in provider_env_fields.items():
+                    payload = body.get(section) or {}
+                    for field, variables in fields.items():
+                        if field not in payload:
+                            continue
+                        value = str(persisted_after[section][field])
+                        for variable in variables:
+                            if variable in os.environ:
+                                os.environ[variable] = value
                 updated.append("persisted_to_yaml")
                 if mcp_auth_value is not None:
                     updated.append("mcp_require_auth")
