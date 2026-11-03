@@ -50,3 +50,19 @@ async def test_archive_cleanup_preserves_bulk_path_index(bucket_mgr, monkeypatch
     # Other mutations must still invalidate the path index normally.
     bucket_mgr._invalidate_bm25()
     assert not bucket_mgr._bucket_path_index_ready
+
+
+@pytest.mark.asyncio
+async def test_archive_cleanup_refuses_pinned_and_archived_metadata_outside_archive(bucket_mgr):
+    cases = [
+        (Path(bucket_mgr.archive_dir), "pinned-archive", {"pinned": True}),
+        (Path(bucket_mgr.dynamic_dir), "outside-archive", {}),
+    ]
+    for directory, bid, metadata in cases:
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / (bid + ".md")
+        frontmatter.dump(frontmatter.Post("keep", id=bid, type="archived", **metadata), str(path))
+        bucket_mgr._invalidate_bm25()
+        result = await bucket_mgr.hard_delete_archived_bucket(bid)
+        assert not result["ok"]
+        assert path.exists()
