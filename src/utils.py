@@ -400,6 +400,37 @@ def parse_iso_datetime(value) -> datetime:
     return parsed
 
 
+def _repair_linked_vault_directories(buckets_dir: str, media_dir: str) -> None:
+    """Restore missing linked leaf directories only inside an accessible vault."""
+    paths = [os.path.join(buckets_dir, name) for name in
+             ("permanent", "dynamic", "archive", "feel", "plans", "letters")]
+    paths.append(media_dir)
+    for path in paths:
+        if not os.path.islink(path) or os.path.isdir(path):
+            continue
+        link_target = os.readlink(path)
+        target = os.path.realpath(os.path.join(os.path.dirname(path), link_target))
+        parent = os.path.dirname(target)
+        # Never recreate the vault root or its primary memory directories.
+        # Existing dynamic/archive siblings prove this is the mounted vault.
+        if (os.path.basename(target) != os.path.basename(path)
+                or not os.path.isdir(parent)
+                or not os.path.isdir(os.path.join(parent, "dynamic"))
+                or not os.path.isdir(os.path.join(parent, "archive"))):
+            raise RuntimeError(
+                f"记忆库目录不可访问：{path} -> {target}。"
+                "请检查手机存储权限和同步目录后重新启动。"
+            )
+        try:
+            os.mkdir(target)
+        except FileExistsError:
+            if not os.path.isdir(target):
+                raise RuntimeError(f"记忆目录目标不是文件夹：{target}") from None
+        if not os.path.isdir(path):
+            raise RuntimeError(f"记忆目录仍不可访问：{path} -> {target}")
+        logging.getLogger(__name__).warning("已恢复缺失的记忆子目录：%s", target)
+
+
 def load_config(config_path: Optional[str] = None) -> dict:
     """
     Load configuration file.
@@ -653,6 +684,7 @@ def load_config(config_path: Optional[str] = None) -> dict:
     # --- Ensure bucket storage directories exist ---
     # --- 确保记忆桶存储目录存在 ---
     buckets_dir: str = str(config["buckets_dir"])
+    _repair_linked_vault_directories(buckets_dir, str(config["media_dir"]))
     for subdir in ["permanent", "dynamic", "archive"]:
         os.makedirs(os.path.join(buckets_dir, subdir), exist_ok=True)
     os.makedirs(str(config["media_dir"]), exist_ok=True)
